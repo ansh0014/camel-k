@@ -18,19 +18,36 @@
 apiVersion: camel.apache.org/v1
 kind: Integration
 metadata:
-  name: keda-kafka-auto-discovery
-  namespace: kafka
+  name: keda-it-artemis-to-log-auto
 spec:
-  sources:
-    - content: |
-        from("kafka:my-topic?brokers=my-cluster-kafka-bootstrap.kafka.svc:9092&groupId=auto-group")
-          .log("${body}");
-      name: routes.java
+  flows:
+  - route:
+      from:
+        steps:
+        - to: log:info
+        uri: amqp:queue:my-queue
   traits:
+    camel:
+      properties:
+        - camel.component.amqp.broker-url=amqp://my-broker-hdls-svc.keda.svc:61616
+        - quarkus.qpid-jms.url=amqp://my-broker-hdls-svc.keda.svc:61616
+        - quarkus.qpid-jms.username=admin
+        - quarkus.qpid-jms.password=admin
     keda:
       enabled: true
       minReplicaCount: 0
       maxReplicaCount: 1
       cooldownPeriod: 20
       pollingInterval: 10
-      # No triggers specified - auto-discovery should create kafka scaler
+      triggers:
+        - type: artemis-queue
+          metadata:
+            managementEndpoint: my-broker-hdls-svc.keda.svc:8161
+            queueName: my-queue
+            brokerAddress: my-queue
+            brokerName: amq-broker
+          secrets:
+            - name: my-broker-credentials-secret
+              mapping:
+                AMQ_USER: username
+                AMQ_PASSWORD: password

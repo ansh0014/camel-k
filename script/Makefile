@@ -61,7 +61,7 @@ BASE_IMAGE_NAME := eclipse-temurin
 BASE_IMAGE_VERSION := 17-jdk
 OFFICIAL_IMAGE_VERSION := 17-jdk
 BASE_IMAGE_SHA_VERSION := 17-jdk
-BASE_IMAGE_SHA := sha256:5d6042fb8cdc14d614e4e421f52e3211fc5aeadddce44cbf9de8ed37c791f824
+BASE_IMAGE_SHA := sha256:09dc814ed22437baa141650fbc1420585609436d701e9bae21ce19a42086e9a9
 BASE_IMAGE := $(BASE_IMAGE_NAME):$(BASE_IMAGE_VERSION)$(if $(filter $(BASE_IMAGE_VERSION),$(BASE_IMAGE_SHA_VERSION)),@$(BASE_IMAGE_SHA),)
 LOCAL_REPOSITORY := /etc/maven/m2
 OPENSHIFT_REGISTRY := image-registry.openshift-image-registry.svc:5000
@@ -278,6 +278,14 @@ test-common: gotestfmt-install
 	exit $${FAILED}
 
 #
+# NetworkPolicy test that requires a Calico-backed Minikube cluster
+#
+test-network-policy: gotestfmt-install
+	FAILED=0; \
+	go test -p $(TEST_COMMON_PARALLEL_COUNT) -timeout 20m -v ./e2e/networkpolicy/... --parallel 1 -tags=integration $(GOTESTFMT) || ((FAILED++)); \
+	if ((FAILED)); then exit 1; fi
+
+#
 # Smoke tests are a subset of common tests used to quickly verify the operator
 #
 test-smoke: gotestfmt-install
@@ -331,11 +339,28 @@ test-knative: gotestfmt-install
 	exit $${FAILED}
 
 #
+# CamelMonitor discovery tests require Camel Monitor and Camel K operators.
+#
+.PHONY: test-camel-monitor
+test-camel-monitor: gotestfmt-install
+	set -o pipefail; FAILED=0; \
+	go test -timeout 20m -v ./e2e/camelmonitor -tags=integration $(GOTESTFMT) || ((FAILED++)); \
+	exit $${FAILED}
+
+#
 # Kafka tests that require the presence of Strimzi operator configuration
 #
 test-kafka: gotestfmt-install
 	FAILED=0; \
 	go test -timeout 20m -v ./e2e/kafka -tags=integration $(GOTESTFMT) || ((FAILED++)); \
+	exit $${FAILED}
+
+#
+# KEDA tests for automatic scaler discovery and autoscaling
+#
+test-keda: gotestfmt-install
+	FAILED=0; \
+	go test -timeout 20m -v ./e2e/keda -tags=integration $(GOTESTFMT) || ((FAILED++)); \
 	exit $${FAILED}
 
 #
@@ -524,13 +549,13 @@ images-push-staging-all:
 	done
 
 images-push:
-	docker push $(IMAGE_PUSH)
-	docker manifest create $(IMAGE_PUSH) $(IMAGE_PUSH)
 	for i in $(ARCH_VERSIONS); do \
-		docker push $(IMAGE_PUSH)-$$i ; \
-		docker manifest create $(IMAGE_PUSH) -a $(IMAGE_PUSH)-$$i; \
+		docker push $(IMAGE_PUSH)-$$i; \
 	done
-	docker manifest push $(IMAGE_PUSH) --purge
+	docker buildx imagetools create \
+		$(foreach i,$(ARCH_VERSIONS),--platform linux/$(i)) \
+		--tag $(IMAGE_PUSH) \
+		$(foreach i,$(ARCH_VERSIONS),$(IMAGE_PUSH)-$(i))
 
 images-tag-staging-all:
 	docker tag $(CUSTOM_IMAGE):$(CUSTOM_VERSION) $(STAGING_IMAGE):$(CUSTOM_VERSION)
@@ -548,15 +573,14 @@ images-push-staging:
 	docker tag $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-amd64 $(STAGING_IMAGE):$(CUSTOM_VERSION)-amd64
 	docker tag $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-amd64 $(STAGING_IMAGE):$(CUSTOM_VERSION)
 	docker push $(STAGING_IMAGE):$(CUSTOM_VERSION)-amd64
-	docker push $(STAGING_IMAGE):$(CUSTOM_VERSION)
 	@if docker inspect $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-arm64 &> /dev/null; then \
 		echo "Image $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-arm64 exists, building the multiarch manifest"; \
 		docker tag $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-arm64 $(STAGING_IMAGE):$(CUSTOM_VERSION)-arm64; \
 		docker push $(STAGING_IMAGE):$(CUSTOM_VERSION)-arm64; \
-		docker manifest create $(STAGING_IMAGE):$(CUSTOM_VERSION) --amend $(STAGING_IMAGE):$(CUSTOM_VERSION)-amd64 --amend $(STAGING_IMAGE):$(CUSTOM_VERSION)-arm64; \
-		docker manifest push --purge $(STAGING_IMAGE):$(CUSTOM_VERSION); \
+		docker buildx imagetools create --platform linux/amd64 --platform linux/arm64 --tag $(STAGING_IMAGE):$(CUSTOM_VERSION) $(STAGING_IMAGE):$(CUSTOM_VERSION)-amd64 $(STAGING_IMAGE):$(CUSTOM_VERSION)-arm64; \
 	else \
 		echo "Image $(CUSTOM_IMAGE):$(CUSTOM_VERSION)-arm64 does not exist"; \
+		docker push $(STAGING_IMAGE):$(CUSTOM_VERSION); \
 	fi
 
 get-image:
@@ -777,7 +801,7 @@ goimport:
 #####
 
 KUSTOMIZE_DIR = "install/overlays/all-namespaces"
-DEFAULT_NS = "camel-k"
+DEFAULT_NS = "camel"
 
 .PHONY: install install-k8s-global install-k8s-ns install-openshift-global install-openshift-ns
 
@@ -821,7 +845,7 @@ endif
 	cd $(KUST_TMP)/install/overlays/platform && kustomize edit set namespace $(NAMESPACE)
 	kubectl apply -k $(KUST_TMP)/$(KUSTOMIZE_DIR) --server-side --force-conflicts
 
-install-k8s-global: DEFAULT_NS="camel-k"
+install-k8s-global: DEFAULT_NS="camel"
 install-k8s-global: KUSTOMIZE_DIR="install/overlays/all-namespaces"
 install-k8s-global: clone-kustomize-dir set-operator-id set-operator-env install-operator
 

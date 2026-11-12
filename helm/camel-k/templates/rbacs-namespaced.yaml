@@ -25,6 +25,14 @@ rules:
 - apiGroups:
   - camel.apache.org
   resources:
+  - camelmonitors
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - camel.apache.org
+  resources:
   - builds
   - camelcatalogs
   - integrationkits
@@ -161,6 +169,17 @@ rules:
   - list
   - patch
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - gateway.networking.k8s.io
   resources:
   - gateways
@@ -180,13 +199,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - storage.k8s.io
-  resources:
-  - storageclasses
-  verbs:
-  - get
-  - list
 - apiGroups:
   - ""
   resources:

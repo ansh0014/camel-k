@@ -35,7 +35,7 @@ const (
 	CamelKRuntimeCatalogVersion = "3.15.3"
 
 	// baseImage --
-	baseImage = "eclipse-temurin:17-jdk@sha256:5d6042fb8cdc14d614e4e421f52e3211fc5aeadddce44cbf9de8ed37c791f824"
+	baseImage = "eclipse-temurin:17-jdk@sha256:09dc814ed22437baa141650fbc1420585609436d701e9bae21ce19a42086e9a9"
 
 	// LocalRepository --
 	LocalRepository = "/etc/maven/m2"
